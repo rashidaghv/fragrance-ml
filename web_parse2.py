@@ -30,8 +30,6 @@ def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={
     for perfume_url in perfume_urls:
         response = requests.get(perfume_url, headers=headers)
 
-        time.sleep(2)  # ensures the page has loaded
-
         soup = BeautifulSoup(response.text, 'html.parser')
 
         rating_element = soup.select_one('span[itemprop="ratingValue"]')
@@ -55,4 +53,7 @@ def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={
 
 
 if __name__ == '__main__':
+    start_time = time.time()
     scrape_fragrantica()
+    end_time = time.time()
+    print(f"Execution time of the function is: {end_time - start_time} seconds")
