@@ -1,5 +1,5 @@
 """
-This script retrieves the necessary info from the Fragrantica website.
+This script retrieves the necessary info from the Fragrantica website about the perfumes.
 """
 import time
 
@@ -66,25 +66,62 @@ def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={
             html_content = driver.page_source
             soup = BeautifulSoup(html_content, 'lxml')
 
-            seasons = {}
+            # seasons = {}
+            # for i in range(4):
+            #     try:
+            #         season = soup.find('div', index=str(i))
+            #         percentage_div = season.find('div', class_='voting-small-chart-size').find_all('div')[1]
+            #         percentage_style = percentage_div.get('style', '')
+            #         percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
+            #         seasons[season.text.strip()] = float(percentage)
+            #     except (AttributeError, IndexError) as e:
+            #         print(f"Error extracting season {i}: {e}")
+
+            # Initialize the variables
+            winter, spring, summer, fall = None, None, None, None
+            day, night = None, None
+
+            # Extract the seasons
             for i in range(4):
                 try:
                     season = soup.find('div', index=str(i))
                     percentage_div = season.find('div', class_='voting-small-chart-size').find_all('div')[1]
                     percentage_style = percentage_div.get('style', '')
                     percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
-                    seasons[season.text.strip()] = float(percentage)
+                    season_name = season.text.strip()
+                    if season_name.lower() == 'winter':
+                        winter = float(percentage)
+                    elif season_name.lower() == 'spring':
+                        spring = float(percentage)
+                    elif season_name.lower() == 'summer':
+                        summer = float(percentage)
+                    elif season_name.lower() == 'fall':
+                        fall = float(percentage)
                 except (AttributeError, IndexError) as e:
                     print(f"Error extracting season {i}: {e}")
 
-            day_night = {}
+            # day_night = {}
+            # for i in range(2):
+            #     try:
+            #         day_or_night = soup.find('div', index=str(4 + i))
+            #         percentage_div = day_or_night.find('div', class_='voting-small-chart-size').find_all('div')[1]
+            #         percentage_style = percentage_div.get('style', '')
+            #         percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
+            #         day_night[day_or_night.text.strip()] = float(percentage)
+            #     except (AttributeError, IndexError) as e:
+            #         print(f"Error extracting day/night {i}: {e}")
+
+            # Extract day/night
             for i in range(2):
                 try:
                     day_or_night = soup.find('div', index=str(4 + i))
                     percentage_div = day_or_night.find('div', class_='voting-small-chart-size').find_all('div')[1]
                     percentage_style = percentage_div.get('style', '')
                     percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
-                    day_night[day_or_night.text.strip()] = float(percentage)
+                    if day_or_night.text.strip().lower() == 'day':
+                        day = float(percentage)
+                    elif day_or_night.text.strip().lower() == 'night':
+                        night = float(percentage)
                 except (AttributeError, IndexError) as e:
                     print(f"Error extracting day/night {i}: {e}")
 
@@ -103,8 +140,12 @@ def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={
         print(f'Number of votes: {num_votes}')
         print(f'Number of reviews: {num_reviews}')
         print(f'Accords: {", ".join(accords)}')
-        print(f'Seasons: {seasons}')
-        print(f'Day_night: {day_night}')
+        print(f'Winter: {winter}')
+        print(f'Spring: {spring}')
+        print(f'Summer: {summer}')
+        print(f'Fall: {fall}')
+        print(f'Day: {day}')
+        print(f'Night: {night}')
         print('---')
 
 
