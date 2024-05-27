@@ -34,123 +34,146 @@ def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={
 
     # scrape the required information for the first 3 perfumes
     for perfume_url in perfume_urls:
-        response = requests.get(perfume_url, headers=headers)
+        with webdriver.Chrome() as driver:
+            driver.get(perfume_url)
+            time.sleep(WAIT_TIME_SELENIUM)
 
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        title = soup.title.text
-
-        rating_element = soup.select_one('span[itemprop="ratingValue"]')
-        rating = rating_element.text if rating_element is not None else 'No rating'
-
-        num_votes_element = soup.select_one('span[itemprop="ratingCount"]')
-        num_votes = num_votes_element.text if num_votes_element is not None else 'No votes'
-
-        num_reviews_element = soup.select_one('meta[itemprop="reviewCount"]')
-        num_reviews = num_reviews_element['content'] if num_reviews_element is not None else 'No reviews'
-
-        accords = [div.text for div in soup.select('div.accord-bar')]
-        
-        url = perfume_url
-
-        try:
-            driver = webdriver.Chrome()  
-            driver.get(url)
-
-            # wait for dynamic content to load (adjust wait_time if needed)
-            WebDriverWait(driver, WAIT_TIME_SELENIUM).until(
-                EC.presence_of_element_located((By.CLASS_NAME, 'voting-small-chart-size'))
-            )
-
-            # get the page source after content has loaded (that's the whole point of using Selenium!)
             html_content = driver.page_source
             soup = BeautifulSoup(html_content, 'lxml')
 
-            # seasons = {}
-            # for i in range(4):
-            #     try:
-            #         season = soup.find('div', index=str(i))
-            #         percentage_div = season.find('div', class_='voting-small-chart-size').find_all('div')[1]
-            #         percentage_style = percentage_div.get('style', '')
-            #         percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
-            #         seasons[season.text.strip()] = float(percentage)
-            #     except (AttributeError, IndexError) as e:
-            #         print(f"Error extracting season {i}: {e}")
+            title = soup.title.text
 
-            # Initialize the variables
-            winter, spring, summer, fall = None, None, None, None
-            day, night = None, None
+            rating_element = soup.select_one('span[itemprop="ratingValue"]')
+            rating = rating_element.text if rating_element is not None else 'No rating'
 
-            # Extract the seasons
-            for i in range(4):
-                try:
-                    season = soup.find('div', index=str(i))
-                    percentage_div = season.find('div', class_='voting-small-chart-size').find_all('div')[1]
-                    percentage_style = percentage_div.get('style', '')
-                    percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
-                    season_name = season.text.strip()
-                    if season_name.lower() == 'winter':
-                        winter = float(percentage)
-                    elif season_name.lower() == 'spring':
-                        spring = float(percentage)
-                    elif season_name.lower() == 'summer':
-                        summer = float(percentage)
-                    elif season_name.lower() == 'fall':
-                        fall = float(percentage)
-                except (AttributeError, IndexError) as e:
-                    print(f"Error extracting season {i}: {e}")
+            num_votes_element = soup.select_one('span[itemprop="ratingCount"]')
+            num_votes = num_votes_element.text if num_votes_element is not None else 'No votes'
 
-            # day_night = {}
-            # for i in range(2):
-            #     try:
-            #         day_or_night = soup.find('div', index=str(4 + i))
-            #         percentage_div = day_or_night.find('div', class_='voting-small-chart-size').find_all('div')[1]
-            #         percentage_style = percentage_div.get('style', '')
-            #         percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
-            #         day_night[day_or_night.text.strip()] = float(percentage)
-            #     except (AttributeError, IndexError) as e:
-            #         print(f"Error extracting day/night {i}: {e}")
+            num_reviews_element = soup.select_one('meta[itemprop="reviewCount"]')
+            num_reviews = num_reviews_element['content'] if num_reviews_element is not None else 'No reviews'
 
-            # Extract day/night
-            for i in range(2):
-                try:
-                    day_or_night = soup.find('div', index=str(4 + i))
-                    percentage_div = day_or_night.find('div', class_='voting-small-chart-size').find_all('div')[1]
-                    percentage_style = percentage_div.get('style', '')
-                    percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
-                    if day_or_night.text.strip().lower() == 'day':
-                        day = float(percentage)
-                    elif day_or_night.text.strip().lower() == 'night':
-                        night = float(percentage)
-                except (AttributeError, IndexError) as e:
-                    print(f"Error extracting day/night {i}: {e}")
+            accords = [div.text for div in soup.select('div.accord-bar')]
+            
+            url = perfume_url
 
-            driver.quit()
+            try:
+                driver = webdriver.Chrome()  
+                driver.get(url)
 
-        # catch potential exceptions
-        except Exception as e: 
-            print(f"An error occurred: {e}")
-            if 'driver' in locals():
+                # wait for dynamic content to be loaded (adjust WAIT_TIME_SELENIUM if needed)
+                WebDriverWait(driver, WAIT_TIME_SELENIUM).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, 'voting-small-chart-size'))
+                )
+
+                # get the page source after content has loaded (that's the whole point of using Selenium!)
+                html_content = driver.page_source
+                soup = BeautifulSoup(html_content, 'lxml')
+
+                winter, spring, summer, fall = None, None, None, None
+                day, night = None, None
+
+                # extract the seasons
+                for i in range(4):
+                    try:
+                        season = soup.find('div', index=str(i))
+                        percentage_div = season.find('div', class_='voting-small-chart-size').find_all('div')[1]
+                        percentage_style = percentage_div.get('style', '')
+                        percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
+                        season_name = season.text.strip()
+                        if season_name.lower() == 'winter':
+                            winter = float(percentage)
+                        elif season_name.lower() == 'spring':
+                            spring = float(percentage)
+                        elif season_name.lower() == 'summer':
+                            summer = float(percentage)
+                        elif season_name.lower() == 'fall':
+                            fall = float(percentage)
+                    except (AttributeError, IndexError) as e:
+                        print(f"Error extracting season {i}: {e}")
+
+
+                # extract day/night
+                for i in range(2):
+                    try:
+                        day_or_night = soup.find('div', index=str(4 + i))
+                        percentage_div = day_or_night.find('div', class_='voting-small-chart-size').find_all('div')[1]
+                        percentage_style = percentage_div.get('style', '')
+                        percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
+                        if day_or_night.text.strip().lower() == 'day':
+                            day = float(percentage)
+                        elif day_or_night.text.strip().lower() == 'night':
+                            night = float(percentage)
+                    except (AttributeError, IndexError) as e:
+                        print(f"Error extracting day/night {i}: {e}")
+
                 driver.quit()
 
-        # inspect the extracted data
-        print(f'URL: {perfume_url}')
-        print(f'Title: {title}')
-        print(f'Rating: {rating}')
-        print(f'Number of votes: {num_votes}')
-        print(f'Number of reviews: {num_reviews}')
-        print(f'Accords: {", ".join(accords)}')
-        print(f'Winter: {winter}')
-        print(f'Spring: {spring}')
-        print(f'Summer: {summer}')
-        print(f'Fall: {fall}')
-        print(f'Day: {day}')
-        print(f'Night: {night}')
-        print('---')
+            # catch potential exceptions
+            except Exception as e: 
+                print(f"An error occurred: {e}")
+                if 'driver' in locals():
+                    driver.quit()
+
+            # sillage
+            largest_category_sillage = None 
+            largest_value_sillage = 0
+
+            for grid_row in soup.find_all('div', class_='grid-x grid-margin-x'):
+                category_name_element = grid_row.find('span', class_='vote-button-name')
+                value_element = grid_row.find('span', class_='vote-button-legend')
+
+                if category_name_element and value_element:
+                    try:
+                        value = int(value_element.text)
+                    except ValueError:  # handle cases where the text is not a valid number
+                        continue
+            
+                    category_name = category_name_element.text
+
+                    if value > largest_value_sillage:
+                        largest_category_sillage = category_name
+                        largest_value_sillage = value
+            
+            # longevity
+            largest_category_longevity = None 
+            largest_value_longevity = 0
+
+            for grid_row in soup.find_all('div', class_='grid-x grid-margin-x'):
+                category_name_element = grid_row.find('span', class_='vote-button-name')
+                value_element = grid_row.find('span', class_='vote-button-legend')
+
+                if category_name_element and value_element:
+                    try:
+                        value = int(value_element.text)
+                    except ValueError:  # error handling
+                        continue
+                    category_name = category_name_element.text
+
+                    if value > largest_value_longevity:
+                        largest_category_longevity = category_name
+                        largest_value_longevity = value
+
+
+            # inspect the results
+            print(f'URL: {perfume_url}')
+            print(f'Title: {title}')
+            print(f'Rating: {rating}')
+            print(f'Number of votes: {num_votes}')
+            print(f'Number of reviews: {num_reviews}')
+            print(f'Accords: {", ".join(accords)}')
+            print(f'Winter: {winter}')
+            print(f'Spring: {spring}')
+            print(f'Summer: {summer}')
+            print(f'Fall: {fall}')
+            print(f'Day: {day}')
+            print(f'Night: {night}')
+            print(f"Sillage: {largest_category_sillage}")
+            print(f"Longevity: {largest_category_longevity}")
+            print('---')
 
 
 if __name__ == '__main__':
     start_time = time.time()
-    res = scrape_fragrantica(n_displayed=2)
+    res = scrape_fragrantica(n_displayed=1)
     end_time = time.time()
     print(f"Execution time of the function is: {end_time - start_time} seconds")
