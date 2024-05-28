@@ -91,7 +91,6 @@ def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={
                     except (AttributeError, IndexError) as e:
                         print(f"Error extracting season {i}: {e}")
 
-
                 # extract day/night
                 for i in range(2):
                     try:
@@ -114,45 +113,36 @@ def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={
                 if 'driver' in locals():
                     driver.quit()
 
-            # sillage
-            largest_category_sillage = None 
-            largest_value_sillage = 0
+            # longevity, sillage, gender, price value
+            # N.B. These features have similar structure, that's why the for-loop was used
+            # TODO: what if the values of several categories are the same?
+            categories = ['LONGEVITY', 'SILLAGE', 'GENDER', 'PRICE VALUE']
+            results = {category: None for category in categories}
 
-            for grid_row in soup.find_all('div', class_='grid-x grid-margin-x'):
-                category_name_element = grid_row.find('span', class_='vote-button-name')
-                value_element = grid_row.find('span', class_='vote-button-legend')
+            for category in categories:
+                category_span = soup.find('span', text=category, attrs={'style': 'font-size: small;'})
+                if category_span:
+                    first_div = category_span.find_parent('div')
+                    if first_div:
+                        third_div = first_div.find_next_sibling('div').find_next_sibling('div')
+                        if third_div:
+                            largest_value = 0
+                            largest_category = None
+                            for grid_row in third_div.find_all('div', class_='grid-x grid-margin-x'):
+                                category_name_element = grid_row.find('span', class_='vote-button-name')
+                                value_element = grid_row.find('span', class_='vote-button-legend')
 
-                if category_name_element and value_element:
-                    try:
-                        value = int(value_element.text)
-                    except ValueError:  # handle cases where the text is not a valid number
-                        continue
-            
-                    category_name = category_name_element.text
+                                if category_name_element and value_element:
+                                    try:
+                                        value = int(value_element.text)
+                                    except ValueError:  # error handling
+                                        continue
+                                    category_name = category_name_element.text
 
-                    if value > largest_value_sillage:
-                        largest_category_sillage = category_name
-                        largest_value_sillage = value
-            
-            # longevity
-            largest_category_longevity = None 
-            largest_value_longevity = 0
-
-            for grid_row in soup.find_all('div', class_='grid-x grid-margin-x'):
-                category_name_element = grid_row.find('span', class_='vote-button-name')
-                value_element = grid_row.find('span', class_='vote-button-legend')
-
-                if category_name_element and value_element:
-                    try:
-                        value = int(value_element.text)
-                    except ValueError:  # error handling
-                        continue
-                    category_name = category_name_element.text
-
-                    if value > largest_value_longevity:
-                        largest_category_longevity = category_name
-                        largest_value_longevity = value
-
+                                    if value > largest_value:
+                                        largest_category = category_name
+                                        largest_value = value
+                            results[category] = largest_category
 
             # inspect the results
             print(f'URL: {perfume_url}')
@@ -167,8 +157,10 @@ def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={
             print(f'Fall: {fall}')
             print(f'Day: {day}')
             print(f'Night: {night}')
-            print(f"Sillage: {largest_category_sillage}")
-            print(f"Longevity: {largest_category_longevity}")
+            print(f"Longevity: {results['LONGEVITY']}")
+            print(f"Sillage: {results['SILLAGE']}")
+            print(f"Gender: {results['GENDER']}")
+            print(f"Price value: {results['PRICE VALUE']}")
             print('---')
 
 
