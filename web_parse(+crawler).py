@@ -7,8 +7,9 @@ import selenium  # programmatically control web browsers
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from splinter import Browser
+import random
 # from seleniumbase import Driver # it can sove captchas given the url (not in browser)
-from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.action_chains import ActionChains # allow low-level interactions
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 import re
@@ -22,9 +23,9 @@ proxies = []
 categories = ['LONGEVITY', 'SILLAGE', 'GENDER', 'PRICE VALUE']
 
 
+
 # Why do we need browser? - requests cannot handle modern webpages
 # that rely on JavaScript to load the content (dynamic and complex)
-
 
 def init_browser():
     # Replace the path with your actual path to the chromedriver
@@ -35,10 +36,77 @@ def init_browser():
     # service = Service(ChromeDriverManager().install())
     # browser = Browser("chrome", service=service, headless=False)
     browser = Browser('firefox', headless=False, incognito=True)
+    browser.driver.set_window_size(1200, 800)
     return browser
 
 
-def crawl_and_parse(url='https://www.fragrantica.com/search/'):
+def random_pause(min_delay=1.5, max_delay=3.5):
+    time.sleep(random.uniform(min_delay, max_delay))
+
+
+def simulate_mouse_movement_simple(driver):
+    """Not working"""
+    action = ActionChains(driver)
+    for _ in range(random.randint(5, 10)):
+        x_offset = random.randint(-100, 100)
+        y_offset = random.randint(-100, 100)
+        action.move_by_offset(x_offset, y_offset).perform()
+        random_pause(0.1, 0.5)  # Short random pause between movements
+
+
+def simulate_human_mouse_movement(driver, start_element, end_element, steps=10):
+    """Ця хуйня не працює"""
+    action = ActionChains(driver)
+
+    def clamp(value, min_value, max_value):
+        return max(min(value, max_value), min_value)
+
+    viewport_width = driver.execute_script("return window.innerWidth")
+    viewport_height = driver.execute_script("return window.innerHeight")
+    print(viewport_height, viewport_width)
+
+    start_x = clamp(start_element.location['x'] + start_element.size['width'] / 2, 0, viewport_width)
+    start_y = clamp(start_element.location['y'] + start_element.size['height'] / 2, 0, viewport_height)
+    end_x = clamp(end_element.location['x'] + end_element.size['width'] / 2, 0, viewport_width)
+    end_y = clamp(end_element.location['y'] + end_element.size['height'] / 2, 0, viewport_height)
+
+    delta_x = (end_x - start_x) / steps
+    delta_y = (end_y - start_y) / steps
+
+    action.move_to_element_with_offset(start_element, start_x, start_y).perform()
+    random_pause(0.2, 0.5)
+
+    for i in range(steps):
+        offset_x = clamp(delta_x * (i + 1) + random.uniform(-5, 5), 0, viewport_width)
+        offset_y = clamp(delta_y * (i + 1) + random.uniform(-5, 5), 0, viewport_height)
+        action.move_by_offset(offset_x - start_x, offset_y - start_y).perform()
+        start_x, start_y = offset_x, offset_y
+        random_pause(0.05, 0.2)
+
+    action.move_to_element(end_element).perform()
+    random_pause(0.2, 0.5)
+
+
+# Function to simulate slow, random scrolling
+def random_slow_scroll(browser):
+    start_time = time.time()
+    scroll_height = browser.execute_script("return document.body.scrollHeight")
+    current_position = browser.execute_script("return window.pageYOffset")
+
+    for i in range(random.randint(3,7)):
+        scroll_step = random.randint(50, 200)  # Random step size
+        current_position += scroll_step
+        browser.execute_script(f"window.scrollTo(0, {current_position});")
+        random_pause(0.05, 0.15)  # Random pause between steps
+
+        # Check if the end of the page is reached
+        if current_position >= scroll_height:
+            break
+    print("Scroll action took: ", time.time() - start_time)
+
+
+
+def crawl_and_parse(year_from, year_to, url='https://www.fragrantica.com/search/'):
     # Search is performed using css selectors (find_by_css) or by Xpath (find_by_xpath)
 
     browser = init_browser()
@@ -57,8 +125,8 @@ def crawl_and_parse(url='https://www.fragrantica.com/search/'):
     # value: min - 1920, max - 2024
 
     try:
-        browser.find_by_css('input[type="number"]')[0].fill(1939)
-        browser.find_by_css('input[type="number"]')[1].fill(1939)
+        browser.find_by_css('input[type="number"]')[0].fill(year_from)
+        browser.find_by_css('input[type="number"]')[1].fill(year_to)
     except Exception as e:
         print(e)
         return
@@ -67,7 +135,7 @@ def crawl_and_parse(url='https://www.fragrantica.com/search/'):
         result2 = browser.find_by_css('input[type="number"]')[0].value
         print(f"Operation successful, new values (first, second): {result1}, {result2} ")
 
-    time.sleep(5)
+    time.sleep(3)
 
     ####  CLICK "SHOW MORE RESULTS"  ####
     # (otherwise only 30 can be displayed)
@@ -93,30 +161,103 @@ def crawl_and_parse(url='https://www.fragrantica.com/search/'):
 
     perfumes_number = len(html_soup.select('div.cell.card.fr-news-box a'))
     print("Perfumes Number:", perfumes_number)
-    for k in range(perfumes_number):
-        browser.find_by_css('span[class="link-span"]')[k].click()
-        time.sleep(5)
 
-        html_content = browser.html
-        html_soup = BeautifulSoup(html_content, 'lxml')
+    successful_extractions = 0
+    iteration_min = 0
+    iteration_max = 0
+    parsing_time = 0
+    for perfume_iter in range(perfumes_number):
+        start_time = time.time()
+        try:
+            # Trying to access perfume page:
+            while True:
+                try:
+                    # Plan B2 (on top of A1) # same shit #SAAAAAAAAAAAME SHITTTTTTTTTTTTTTTTT
+                    # simulate_mouse_movement_simple(browser.driver)
+                    # Plan A - immediate action
+                    browser.find_by_css('span[class="link-span"]')[perfume_iter].click()
+                    # Plan B - human-like behavior # eta parasha ne rabotaet
+                    # element_to_click = browser.find_by_css('span[class="link-span"]')[perfume_iter]
+                    # simulate_human_mouse_movement(browser.driver, browser.driver.find_element(By.TAG_NAME, 'body'), element_to_click._element)  # Possible improvement: Starting position - last post
+                    break
+                except selenium.common.exceptions.ElementClickInterceptedException:
+                    print("Could not click on the element, use scroll")
+                    element_to_click = browser.find_by_css('span[class="link-span"]')[perfume_iter]
 
-        ### I'm a human verification ###
+                    # Scrolling to the element
+                    # Redo for Smooth Scroll
+                    try:
+                        # arguments[0] refers to the first argument passed to the script, which is element_to_click in this case
+                        # Plan A
+                        # browser.execute_script("arguments[0].scrollIntoView(true);", element_to_click._element)  # Plan A2 to try: # element = driver.find_element_by_css('div[class*="loadingWhiteBox"]')  # webdriver.ActionChains(driver).move_to_element(element).click(element).perform()
+                        # Plan B # not tested yet
+                        browser.execute_script("""
+                                    #     arguments[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+                                    # """, element_to_click)
+                        time.sleep(1)  # Wait for the scroll to complete
 
-        html_content = browser.html
-        html_soup = BeautifulSoup(html_content, 'lxml')
 
-        while html_soup.title.text == "Just a moment...":
-            try:
-                browser.find_by_xpath('//iframe[contains(@src, "challenges.cloudflare.com")]').first.click()
-            except Exception as e:
-                print(e, 'Could not complete the captcha ')
+                    except Exception as e:
+                        print('Error occurred while scrolling:', e)
+
+            random_pause()  # waiting for the page to load completely
+
+            ### I'm a human verification ###
+            html_content = browser.html
+            html_soup = BeautifulSoup(html_content, 'lxml')
+
+            while html_soup.title.text == "Just a moment...":
+                try:
+                    browser.find_by_xpath('//iframe[contains(@src, "challenges.cloudflare.com")]').first.click()
+                except Exception as e:
+                    print(e, 'Could not complete the captcha ')
+
+            # Additional measures to avoid getting blocked:
+            # Random smooth scrolling
+            random_slow_scroll(browser)
+
+            # browser.execute_script("""
+            #     arguments[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+            # """, element)
+            # time.sleep(1)  # Wait for the scroll to complete
 
 
-        parse_result = parse_perfume_page(browser.html)
-        time.sleep(5)
-        browser.back()
-        time.sleep(3)
-        print('NEXT PLEASE \n')
+            # Random mouse actions (maybe on the back button)??
+
+
+            # Simulate human-like mouse movement
+            # action = ActionChains(browser)
+            # action.move_to_element(element_to_click).perform()
+            # random_pause(0.5, 1.5)  # Short pause before clicking
+
+
+
+
+
+            # parsing the page
+            parse_result = parse_perfume_page(browser.html)
+            random_pause() #5
+            browser.back()
+            random_pause() #3
+
+        except Exception as e:
+            print("Exception while extracting data occured:", e)
+            print("Successful Extractions:", successful_extractions)
+            print(f"Iteration times: Average - {parsing_time/successful_extractions}; Max - {iteration_max}; min - {iteration_min}")
+            return
+
+        successful_extractions += 1
+        iteration_elapsed_time = time.time() - start_time
+        print(f"Iteration {perfume_iter + 1} took {iteration_elapsed_time}")
+        parsing_time += iteration_elapsed_time
+        iteration_max = max(iteration_max, iteration_elapsed_time)
+        if perfume_iter == 0:
+            iteration_min = iteration_max
+        else:
+            iteration_min = min(iteration_min, iteration_elapsed_time)
+
+    print("Search: success!")
+    print(f"Iteration times: Average - {parsing_time/successful_extractions}; Max - {iteration_max}; min - {iteration_min}")
 
     # enable this code where you need to look into the html code manually
     # with open('crawl_test_page.html', 'w', encoding='utf-8') as file:
@@ -382,7 +523,7 @@ def parse_fragrance_notes(soup):
 
 
 if __name__ == '__main__':
-    crawl_and_parse()
+    crawl_and_parse(1939, 1939)
 
     # with open('Leather Parfume.html', 'r', encoding="utf8") as html_file:
     #     content = html_file.read()
