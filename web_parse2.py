@@ -7,13 +7,10 @@ import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 from selenium import webdriver  # selenium is used, since the page is loaded dynamically
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 
 # constants
-WAIT_TIME_SELENIUM = 5  # feel free to test and adjust this value
+WAIT_TIME_SELENIUM = 2  # feel free to test and adjust this value
 
 
 def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={'User-Agent': 'Mozilla/5.0'}, n_displayed=3):
@@ -27,12 +24,13 @@ def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={
         n_displayed (int): The number of perfumes to display information for. Default is 3.
     """   
     response = requests.get(main_url, headers=headers)
-
     soup = BeautifulSoup(response.text, 'html.parser')
 
     perfume_urls = [main_url + a['href'] for a in soup.select('div.cell.card.fr-news-box a')[:n_displayed]]
+    
+    perfumes_list = []  # list to store the scraped data
 
-    # scrape the required information for the first 3 perfumes
+    # scrape the required information for the first n_displayed perfumes
     for perfume_url in perfume_urls:
         with webdriver.Chrome() as driver:
             driver.get(perfume_url)
@@ -54,64 +52,45 @@ def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={
 
             accords = [div.text for div in soup.select('div.accord-bar')]
             
-            url = perfume_url
+            # get the page source after content has loaded (that's the whole point of using Selenium!)
+            html_content = driver.page_source
+            soup = BeautifulSoup(html_content, 'lxml')
 
-            try:
-                driver = webdriver.Chrome()  
-                driver.get(url)
+            winter, spring, summer, fall = None, None, None, None
+            day, night = None, None
 
-                # wait for dynamic content to be loaded (adjust WAIT_TIME_SELENIUM if needed)
-                WebDriverWait(driver, WAIT_TIME_SELENIUM).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, 'voting-small-chart-size'))
-                )
+            # extract the seasons
+            for i in range(4):
+                try:
+                    season = soup.find('div', index=str(i))
+                    percentage_div = season.find('div', class_='voting-small-chart-size').find_all('div')[1]
+                    percentage_style = percentage_div.get('style', '')
+                    percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
+                    season_name = season.text.strip()
+                    if season_name.lower() == 'winter':
+                        winter = float(percentage)
+                    elif season_name.lower() == 'spring':
+                        spring = float(percentage)
+                    elif season_name.lower() == 'summer':
+                        summer = float(percentage)
+                    elif season_name.lower() == 'fall':
+                        fall = float(percentage)
+                except (AttributeError, IndexError) as e:
+                    print(f"Error extracting season {i}: {e}")
 
-                # get the page source after content has loaded (that's the whole point of using Selenium!)
-                html_content = driver.page_source
-                soup = BeautifulSoup(html_content, 'lxml')
-
-                winter, spring, summer, fall = None, None, None, None
-                day, night = None, None
-
-                # extract the seasons
-                for i in range(4):
-                    try:
-                        season = soup.find('div', index=str(i))
-                        percentage_div = season.find('div', class_='voting-small-chart-size').find_all('div')[1]
-                        percentage_style = percentage_div.get('style', '')
-                        percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
-                        season_name = season.text.strip()
-                        if season_name.lower() == 'winter':
-                            winter = float(percentage)
-                        elif season_name.lower() == 'spring':
-                            spring = float(percentage)
-                        elif season_name.lower() == 'summer':
-                            summer = float(percentage)
-                        elif season_name.lower() == 'fall':
-                            fall = float(percentage)
-                    except (AttributeError, IndexError) as e:
-                        print(f"Error extracting season {i}: {e}")
-
-                # extract day/night
-                for i in range(2):
-                    try:
-                        day_or_night = soup.find('div', index=str(4 + i))
-                        percentage_div = day_or_night.find('div', class_='voting-small-chart-size').find_all('div')[1]
-                        percentage_style = percentage_div.get('style', '')
-                        percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
-                        if day_or_night.text.strip().lower() == 'day':
-                            day = float(percentage)
-                        elif day_or_night.text.strip().lower() == 'night':
-                            night = float(percentage)
-                    except (AttributeError, IndexError) as e:
-                        print(f"Error extracting day/night {i}: {e}")
-
-                driver.quit()
-
-            # catch potential exceptions
-            except Exception as e: 
-                print(f"An error occurred: {e}")
-                if 'driver' in locals():
-                    driver.quit()
+            # extract day/night
+            for i in range(2):
+                try:
+                    day_or_night = soup.find('div', index=str(4 + i))
+                    percentage_div = day_or_night.find('div', class_='voting-small-chart-size').find_all('div')[1]
+                    percentage_style = percentage_div.get('style', '')
+                    percentage = percentage_style.split(';')[-3].split(':')[-1].strip('%;')
+                    if day_or_night.text.strip().lower() == 'day':
+                        day = float(percentage)
+                    elif day_or_night.text.strip().lower() == 'night':
+                        night = float(percentage)
+                except (AttributeError, IndexError) as e:
+                    print(f"Error extracting day/night {i}: {e}")
 
             # longevity, sillage, gender, price value
             # N.B. These features have similar structure, that's why the for-loop was used
@@ -144,28 +123,33 @@ def scrape_fragrantica(main_url='https://www.fragrantica.com/search/', headers={
                                         largest_value = value
                             results[category] = largest_category
 
-            # inspect the results
-            print(f'URL: {perfume_url}')
-            print(f'Title: {title}')
-            print(f'Rating: {rating}')
-            print(f'Number of votes: {num_votes}')
-            print(f'Number of reviews: {num_reviews}')
-            print(f'Accords: {", ".join(accords)}')
-            print(f'Winter: {winter}')
-            print(f'Spring: {spring}')
-            print(f'Summer: {summer}')
-            print(f'Fall: {fall}')
-            print(f'Day: {day}')
-            print(f'Night: {night}')
-            print(f"Longevity: {results['LONGEVITY']}")
-            print(f"Sillage: {results['SILLAGE']}")
-            print(f"Gender: {results['GENDER']}")
-            print(f"Price value: {results['PRICE VALUE']}")
-            print('---')
+            perfume_data = {
+                'Title': title,
+                'Rating': rating,
+                'Number of votes': num_votes,
+                'Number of reviews': num_reviews,
+                'Accords': ", ".join(accords),
+                'Winter': winter,
+                'Spring': spring,
+                'Summer': summer,
+                'Fall': fall,
+                'Day': day,
+                'Night': night,
+                'Longevity': results['LONGEVITY'],
+                'Sillage': results['SILLAGE'],
+                'Gender': results['GENDER'],
+                'Price value': results['PRICE VALUE']
+            }
+
+            perfumes_list.append(perfume_data)
+        
+        df = pd.DataFrame(perfumes_list)
+
+        df.to_csv('data/perfumes.csv', index=False)
 
 
 if __name__ == '__main__':
     start_time = time.time()
-    res = scrape_fragrantica(n_displayed=1)
+    scrape_fragrantica(n_displayed=3)
     end_time = time.time()
     print(f"Execution time of the function is: {end_time - start_time} seconds")
