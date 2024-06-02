@@ -8,8 +8,10 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from splinter import Browser
 import random
+import scipy.interpolate as si # implementation of mouse move v3
+import numpy as np
 # from seleniumbase import Driver # it can sove captchas given the url (not in browser)
-from selenium.webdriver.common.action_chains import ActionChains # allow low-level interactions
+from selenium.webdriver.common.action_chains import ActionChains  # allow low-level interactions
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 import re
@@ -87,6 +89,172 @@ def simulate_human_mouse_movement(driver, start_element, end_element, steps=10):
     random_pause(0.2, 0.5)
 
 
+def generate_smooth_path(browser, end_coordinates, viewport_width, viewport_height, num_points=50):
+    """Create random intermediate control points within the window frame using B-spline interpolation"""
+    # Obtaining scroll informaition
+    print("Start of generating smooth mouse path function")
+
+    scroll_info = browser.driver.execute_script("""
+                return {
+                    scrollX: window.scrollX,
+                    scrollY: window.scrollY,
+                };
+            """)
+
+    print(viewport_width, viewport_height)
+    print("end point:", [end_coordinates['x'], end_coordinates['y']])
+
+    intermediate_points = np.random.rand(3, 2) * [viewport_width, viewport_height] # + np.array([scroll_info['scrollX'], scroll_info['scrollY']])
+
+    # Combine start, intermediate, and end points
+    points = np.vstack([intermediate_points, np.array([end_coordinates['x'] - scroll_info['scrollX'], end_coordinates['y'] - scroll_info['scrollY']])])
+    browser.driver.execute_script(f"""
+                 window.mouseX = {points[0][0]};
+                 window.mouseY = {points[0][1]};
+             """)
+
+    # points -= points[0]
+
+    x = points[:, 0]
+    y = points[:, 1]
+
+    t = range(len(points))
+    ipl_t = np.linspace(0.0, len(points) - 1, num_points)
+
+    x_tup = si.splrep(t, x, k=3)
+    y_tup = si.splrep(t, y, k=3)
+
+    x_list = list(x_tup)
+    xl = x.tolist()
+    x_list[1] = xl + [0.0, 0.0, 0.0, 0.0]
+
+    y_list = list(y_tup)
+    yl = y.tolist()
+    y_list[1] = yl + [0.0, 0.0, 0.0, 0.0]
+
+    #print(list(zip(si.splev(ipl_t, x_list), si.splev(ipl_t, y_list))))
+    coordinates = list(zip(si.splev(ipl_t, x_list), si.splev(ipl_t, y_list)))
+    print(coordinates)
+    offsets = []
+    for i in range(1, len(coordinates)):
+        # Calculate the difference between the current and the previous coordinate
+        offset_x = coordinates[i][0] - coordinates[i - 1][0]
+        offset_y = coordinates[i][1] - coordinates[i - 1][1]
+
+        # Append the offset to the list
+        offsets.append((offset_x, offset_y))
+
+    final_x = coordinates[0][0]
+    final_y = coordinates[0][1]
+    for offset in offsets:
+        final_x += offset[0]
+        final_y += offset[1]
+
+    # coordinates_array = np.array(offsets)
+    print(final_x, final_y)
+
+    print(offsets)
+
+    return offsets
+
+    #return si.splev(ipl_t, x_list), si.splev(ipl_t, y_list)  # x_i ,y_i interpolate values
+
+    # x_tup = si.splrep(t, x, k=3)
+    # y_tup = si.splrep(t, y, k=3)
+    #
+    # x_i = si.splev(ipl_t, x_tup)  # x interpolate values
+    # y_i = si.splev(ipl_t, y_tup)  # y interpolate values
+    #
+    #
+    #
+    #
+    #
+    #
+    # return x_i, y_i
+
+def get_center_element(browser):
+    script = """
+    var element = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+    return element ? element.id : null;
+    """
+    element_id = browser.evaluate_script(script)
+    return element_id
+
+def get_interpolated_coordinates():
+    # Curve base:
+    points = [[0, 0], [0, 2], [2, 3], [4, 0], [6, 3], [8, 2], [8, 0]];
+    points = np.array(points)
+
+    x = points[:, 0]
+    y = points[:, 1]
+
+    t = range(len(points))
+    ipl_t = np.linspace(0.0, len(points) - 1, 100)
+
+    x_tup = si.splrep(t, x, k=3)
+    y_tup = si.splrep(t, y, k=3)
+
+    x_list = list(x_tup)
+    xl = x.tolist()
+    x_list[1] = xl + [0.0, 0.0, 0.0, 0.0]
+
+    y_list = list(y_tup)
+    yl = y.tolist()
+    y_list[1] = yl + [0.0, 0.0, 0.0, 0.0]
+
+    return si.splev(ipl_t, x_list), si.splev(ipl_t, y_list)  # x_i ,y_i interpolate values
+
+
+def simulate_mouse_movement_v3(driver, start_element, x_i, y_i):
+    # Inject JavaScript to track the mouse position
+    driver.execute_script("""
+        window.mouseX = 0;
+        window.mouseY = 0;
+
+        document.addEventListener('mousemove', function(e) {
+            window.mouseX = e.pageX;  
+            window.mouseY = e.pageY;
+        });
+    """)
+    # e.clientX;
+    # e.clientY;
+
+    action = ActionChains(driver)
+
+    # First, go to your start point or Element:
+    action.move_to_element(start_element)
+    print("element location: ", start_element.location)
+    print("cursor location: ", driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
+    action.perform()
+    print()
+    print("cursor location: ", driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
+    for mouse_x, mouse_y in zip(x_i, y_i):
+        # Here you should reset the ActionChain and the 'jump' wont happen:
+        action = ActionChains(driver)
+        action.move_by_offset(mouse_x, mouse_y)
+        action.perform()
+        print("cursor location: ", driver.execute_script("return {x: window.mouseX, y: window.mouseY};"),
+              end='\n\n')
+
+    action.click().perform()
+
+def perform_smooth_mouse_move_v4(browser, offsets, end_coordinates=(0,0)):
+    """Perform the mouse movement"""
+
+    print("cursor location: ", browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
+    for mouse_x, mouse_y in offsets:
+        print(mouse_x, mouse_y)
+        current_coordinates = browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};")
+        print("Projected Location: ", current_coordinates['x'] + mouse_x, current_coordinates['y'] + mouse_y)
+        action = ActionChains(browser.driver)
+        action.move_by_offset(mouse_x, mouse_y)
+        action.perform()
+        print("cursor location: ", browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};"),
+              end='\n\n')
+    print(end_coordinates, browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
+
+
+
 # Function to simulate slow, random scrolling
 def random_slow_scroll(browser):
     start_time = time.time()
@@ -162,10 +330,25 @@ def crawl_and_parse(year_from, year_to, url='https://www.fragrantica.com/search/
     perfumes_number = len(html_soup.select('div.cell.card.fr-news-box a'))
     print("Perfumes Number:", perfumes_number)
 
+    # Inject JavaScript to track the mouse position
+    browser.driver.execute_script("""
+             window.mouseX = 0;
+             window.mouseY = 0;
+
+             document.addEventListener('mousemove', function(e) {
+                 window.mouseX = e.pageX;  
+                 window.mouseY = e.pageY;
+             });
+         """)
+
     successful_extractions = 0
     iteration_min = 0
     iteration_max = 0
     parsing_time = 0
+    viewport_width = browser.driver.execute_script('return window.innerWidth') ## document.documentElement.scrollWidth,
+    viewport_height = browser.driver.execute_script('return window.innerHeight') #("return window.innerHeight") # "return document.body.scrollHeight"
+    page_width = browser.driver.execute_script('document.documentElement.scrollWidth')
+    page_height = browser.driver.execute_script('document.documentElement.scrollHeight')
     for perfume_iter in range(perfumes_number):
         start_time = time.time()
         try:
@@ -175,10 +358,19 @@ def crawl_and_parse(year_from, year_to, url='https://www.fragrantica.com/search/
                     # Plan B2 (on top of A1) # same shit #SAAAAAAAAAAAME SHITTTTTTTTTTTTTTTTT
                     # simulate_mouse_movement_simple(browser.driver)
                     # Plan A - immediate action
-                    browser.find_by_css('span[class="link-span"]')[perfume_iter].click()
+                    #browser.find_by_css('span[class="link-span"]')[perfume_iter].click()
                     # Plan B - human-like behavior # eta parasha ne rabotaet
-                    # element_to_click = browser.find_by_css('span[class="link-span"]')[perfume_iter]
+                    element_to_click = browser.find_by_css('span[class="link-span"]')[perfume_iter]
                     # simulate_human_mouse_movement(browser.driver, browser.driver.find_element(By.TAG_NAME, 'body'), element_to_click._element)  # Possible improvement: Starting position - last post
+
+                    # Simulated mouse path
+                    # x_i, y_i = get_interpolated_coordinates()
+                    # simulate_mouse_movement_v3(browser.driver, element_to_click._element, x_i, y_i)
+                    offsets = generate_smooth_path(browser, element_to_click._element.location, viewport_width, viewport_height)
+                    perform_smooth_mouse_move_v4(browser, offsets, element_to_click._element.location)
+
+
+                    return #
                     break
                 except selenium.common.exceptions.ElementClickInterceptedException:
                     print("Could not click on the element, use scroll")
@@ -243,7 +435,7 @@ def crawl_and_parse(year_from, year_to, url='https://www.fragrantica.com/search/
         except Exception as e:
             print("Exception while extracting data occured:", e)
             print("Successful Extractions:", successful_extractions)
-            print(f"Iteration times: Average - {parsing_time/successful_extractions}; Max - {iteration_max}; min - {iteration_min}")
+            print(f"Iteration times: Average - {parsing_time/successful_extractions if successful_extractions != 0 else 0}; Max - {iteration_max}; min - {iteration_min}")
             return
 
         successful_extractions += 1
@@ -257,7 +449,7 @@ def crawl_and_parse(year_from, year_to, url='https://www.fragrantica.com/search/
             iteration_min = min(iteration_min, iteration_elapsed_time)
 
     print("Search: success!")
-    print(f"Iteration times: Average - {parsing_time/successful_extractions}; Max - {iteration_max}; min - {iteration_min}")
+    print(f"Iteration times: Average - {parsing_time/successful_extractions if successful_extractions != 0 else 0}; Max - {iteration_max}; min - {iteration_min}")
 
     # enable this code where you need to look into the html code manually
     # with open('crawl_test_page.html', 'w', encoding='utf-8') as file:
