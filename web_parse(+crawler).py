@@ -36,7 +36,7 @@ def init_browser():
     # executable_path = {"your_path": ChromeDriverManager().install()}
     # browser = Browser("chrome", **executable_path, headless=False)
     # service = Service(ChromeDriverManager().install())
-    # browser = Browser("chrome", service=service, headless=False)
+    # browser = Browser("chrome", headless=False, incognito=True) #service=service,
     browser = Browser('firefox', headless=False, incognito=True)
     browser.driver.set_window_size(1200, 800)
     return browser
@@ -91,8 +91,8 @@ def simulate_human_mouse_movement(driver, start_element, end_element, steps=10):
 
 def generate_smooth_path(browser, end_coordinates, viewport_width, viewport_height, num_points=50):
     """Create random intermediate control points within the window frame using B-spline interpolation"""
-    # Obtaining scroll informaition
-    print("Start of generating smooth mouse path function")
+    # Obtaining scroll information
+    print("\nStart of generating smooth mouse path function")
 
     scroll_info = browser.driver.execute_script("""
                 return {
@@ -101,19 +101,20 @@ def generate_smooth_path(browser, end_coordinates, viewport_width, viewport_heig
                 };
             """)
 
-    print(viewport_width, viewport_height)
-    print("end point:", [end_coordinates['x'], end_coordinates['y']])
+    print(f"Browser screen current parameters: {viewport_width}, {viewport_height}; scroll: {scroll_info['scrollX']}, {scroll_info['scrollY']}")
+    print("end point (target):", [end_coordinates['x'], end_coordinates['y']])
+
 
     intermediate_points = np.random.rand(3, 2) * [viewport_width, viewport_height] # + np.array([scroll_info['scrollX'], scroll_info['scrollY']])
 
     # Combine start, intermediate, and end points
-    points = np.vstack([intermediate_points, np.array([end_coordinates['x'] - scroll_info['scrollX'], end_coordinates['y'] - scroll_info['scrollY']])])
-    browser.driver.execute_script(f"""
-                 window.mouseX = {points[0][0]};
-                 window.mouseY = {points[0][1]};
-             """)
+    points = np.vstack([intermediate_points, np.array([end_coordinates['x'] - scroll_info['scrollX'], end_coordinates['y'] - round(scroll_info['scrollY'])])])
 
-    # points -= points[0]
+    action = ActionChains(browser.driver)
+    action.move_by_offset(points[0][0], points[0][1])
+    action.perform()
+    print("initial update cursor location: ", browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
+
 
     x = points[:, 0]
     y = points[:, 1]
@@ -134,7 +135,7 @@ def generate_smooth_path(browser, end_coordinates, viewport_width, viewport_heig
 
     #print(list(zip(si.splev(ipl_t, x_list), si.splev(ipl_t, y_list))))
     coordinates = list(zip(si.splev(ipl_t, x_list), si.splev(ipl_t, y_list)))
-    print(coordinates)
+    coordinates = [(round(x), round(y)) for x, y in coordinates]
     offsets = []
     for i in range(1, len(coordinates)):
         # Calculate the difference between the current and the previous coordinate
@@ -144,33 +145,7 @@ def generate_smooth_path(browser, end_coordinates, viewport_width, viewport_heig
         # Append the offset to the list
         offsets.append((offset_x, offset_y))
 
-    final_x = coordinates[0][0]
-    final_y = coordinates[0][1]
-    for offset in offsets:
-        final_x += offset[0]
-        final_y += offset[1]
-
-    # coordinates_array = np.array(offsets)
-    print(final_x, final_y)
-
-    print(offsets)
-
     return offsets
-
-    #return si.splev(ipl_t, x_list), si.splev(ipl_t, y_list)  # x_i ,y_i interpolate values
-
-    # x_tup = si.splrep(t, x, k=3)
-    # y_tup = si.splrep(t, y, k=3)
-    #
-    # x_i = si.splev(ipl_t, x_tup)  # x interpolate values
-    # y_i = si.splev(ipl_t, y_tup)  # y interpolate values
-    #
-    #
-    #
-    #
-    #
-    #
-    # return x_i, y_i
 
 def get_center_element(browser):
     script = """
@@ -204,6 +179,30 @@ def get_interpolated_coordinates():
 
     return si.splev(ipl_t, x_list), si.splev(ipl_t, y_list)  # x_i ,y_i interpolate values
 
+def test_negative_offset(driver, start_element):
+    print("Start negative offset test")
+
+    mouse_x = 0
+    mouse_y = - 7
+    print("Offset: ", mouse_x, mouse_y)
+    current_coordinates = driver.execute_script("return {x: window.mouseX, y: window.mouseY};")
+    print("Projected Location: ", current_coordinates['x'] + mouse_x, current_coordinates['y'] + mouse_y)
+
+    action = ActionChains(driver)
+    # action.move_to_element(start_element)
+    # print("element location: ", start_element.location)
+    # print("cursor location: ", driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
+    # action.perform()
+    driver.execute_script(f"""
+                        window.mouseX = 274;
+                        window.mouseY = 703;
+                    """)
+    print("cursor location: ", driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
+
+    action.move_by_offset(mouse_x, mouse_y)
+    action.perform()
+    print("cursor location: ", driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
+
 
 def simulate_mouse_movement_v3(driver, start_element, x_i, y_i):
     # Inject JavaScript to track the mouse position
@@ -216,20 +215,32 @@ def simulate_mouse_movement_v3(driver, start_element, x_i, y_i):
             window.mouseY = e.pageY;
         });
     """)
-    # e.clientX;
-    # e.clientY;
 
     action = ActionChains(driver)
 
     # First, go to your start point or Element:
-    action.move_to_element(start_element)
+    # action.move_to_element(start_element)
     print("element location: ", start_element.location)
     print("cursor location: ", driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
-    action.perform()
+    # action.perform()
     print()
-    print("cursor location: ", driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
+    action = ActionChains(driver)
+    action.move_by_offset(-5, -5)
+    action.perform()
+    # print("cursor location: ", driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
     for mouse_x, mouse_y in zip(x_i, y_i):
+        # current_coordinates = browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};")
+        # print("Offset:", mouse_x, mouse_y)
+        # print("Starting Location 1: ", browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};") )
+        # print("Projected Location 1: ", current_coordinates['x'] + mouse_x, current_coordinates['y'] + mouse_y)
+        # print("Starting Location 2: ", final_x, final_y)
+        # final_x += mouse_x
+        # final_y += mouse_y
+        # print("Projected Location 2: ", final_x, final_y)
         # Here you should reset the ActionChain and the 'jump' wont happen:
+        print("Offset: ", mouse_x, mouse_y)
+        current_coordinates = driver.execute_script("return {x: window.mouseX, y: window.mouseY};")
+        print("Projected Location: ", current_coordinates['x'] + mouse_x, current_coordinates['y'] + mouse_y)
         action = ActionChains(driver)
         action.move_by_offset(mouse_x, mouse_y)
         action.perform()
@@ -240,19 +251,16 @@ def simulate_mouse_movement_v3(driver, start_element, x_i, y_i):
 
 def perform_smooth_mouse_move_v4(browser, offsets, end_coordinates=(0,0)):
     """Perform the mouse movement"""
-
-    print("cursor location: ", browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
+    action = ActionChains(browser.driver)
     for mouse_x, mouse_y in offsets:
-        print(mouse_x, mouse_y)
-        current_coordinates = browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};")
-        print("Projected Location: ", current_coordinates['x'] + mouse_x, current_coordinates['y'] + mouse_y)
-        action = ActionChains(browser.driver)
         action.move_by_offset(mouse_x, mouse_y)
         action.perform()
-        print("cursor location: ", browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};"),
-              end='\n\n')
-    print(end_coordinates, browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
-
+    # print(end_coordinates, browser.driver.execute_script("return {x: window.mouseX, y: window.mouseY};")) #  current_coordinates['x']
+    # action.move_to_element(start_element)
+    # print("element location: ", start_element.location)
+    # print("cursor location: ", driver.execute_script("return {x: window.mouseX, y: window.mouseY};"))
+    # action.perform()
+    action.click().perform()
 
 
 # Function to simulate slow, random scrolling
@@ -355,24 +363,26 @@ def crawl_and_parse(year_from, year_to, url='https://www.fragrantica.com/search/
             # Trying to access perfume page:
             while True:
                 try:
+
                     # Plan B2 (on top of A1) # same shit #SAAAAAAAAAAAME SHITTTTTTTTTTTTTTTTT
-                    # simulate_mouse_movement_simple(browser.driver)
                     # Plan A - immediate action
                     #browser.find_by_css('span[class="link-span"]')[perfume_iter].click()
                     # Plan B - human-like behavior # eta parasha ne rabotaet
                     element_to_click = browser.find_by_css('span[class="link-span"]')[perfume_iter]
                     # simulate_human_mouse_movement(browser.driver, browser.driver.find_element(By.TAG_NAME, 'body'), element_to_click._element)  # Possible improvement: Starting position - last post
 
+
+                    # Scroll to the element
+                    browser.execute_script("arguments[0].scrollIntoView(true);", element_to_click._element)
+                    time.sleep(1)  # Wait for the scroll to complete
+
                     # Simulated mouse path
-                    # x_i, y_i = get_interpolated_coordinates()
-                    # simulate_mouse_movement_v3(browser.driver, element_to_click._element, x_i, y_i)
                     offsets = generate_smooth_path(browser, element_to_click._element.location, viewport_width, viewport_height)
                     perform_smooth_mouse_move_v4(browser, offsets, element_to_click._element.location)
-
-
-                    return #
+                    element_to_click.click()
+                    print("Moving to the perfume page")
                     break
-                except selenium.common.exceptions.ElementClickInterceptedException:
+                except Exception: #selenium.common.exceptions.ElementClickInterceptedException
                     print("Could not click on the element, use scroll")
                     element_to_click = browser.find_by_css('span[class="link-span"]')[perfume_iter]
 
@@ -384,7 +394,7 @@ def crawl_and_parse(year_from, year_to, url='https://www.fragrantica.com/search/
                         # browser.execute_script("arguments[0].scrollIntoView(true);", element_to_click._element)  # Plan A2 to try: # element = driver.find_element_by_css('div[class*="loadingWhiteBox"]')  # webdriver.ActionChains(driver).move_to_element(element).click(element).perform()
                         # Plan B # not tested yet
                         browser.execute_script("""
-                                    #     arguments[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+                                    #     arguments[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest'});
                                     # """, element_to_click)
                         time.sleep(1)  # Wait for the scroll to complete
 
@@ -413,24 +423,17 @@ def crawl_and_parse(year_from, year_to, url='https://www.fragrantica.com/search/
             # """, element)
             # time.sleep(1)  # Wait for the scroll to complete
 
-
-            # Random mouse actions (maybe on the back button)??
-
-
             # Simulate human-like mouse movement
             # action = ActionChains(browser)
             # action.move_to_element(element_to_click).perform()
             # random_pause(0.5, 1.5)  # Short pause before clicking
 
 
-
-
-
             # parsing the page
             parse_result = parse_perfume_page(browser.html)
-            random_pause() #5
+            random_pause()
             browser.back()
-            random_pause() #3
+            random_pause()
 
         except Exception as e:
             print("Exception while extracting data occured:", e)
