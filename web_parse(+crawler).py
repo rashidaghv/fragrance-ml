@@ -7,7 +7,7 @@ import selenium  # programmatically control web browsers
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from splinter import Browser
-from seleniumbase import Driver # it can sove captchas given the url (not in browser)
+# from seleniumbase import Driver # it can sove captchas given the url (not in browser)
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
@@ -19,6 +19,8 @@ import re
 
 file_path = 'scraped_data.pkl'
 proxies = []
+categories = ['LONGEVITY', 'SILLAGE', 'GENDER', 'PRICE VALUE']
+
 
 # Why do we need browser? - requests cannot handle modern webpages
 # that rely on JavaScript to load the content (dynamic and complex)
@@ -30,8 +32,9 @@ def init_browser():
 
     # executable_path = {"your_path": ChromeDriverManager().install()}
     # browser = Browser("chrome", **executable_path, headless=False)
-    service = Service(ChromeDriverManager().install())
-    browser = Browser("chrome", service=service, headless=False)
+    # service = Service(ChromeDriverManager().install())
+    # browser = Browser("chrome", service=service, headless=False)
+    browser = Browser('firefox', headless=False, incognito=True)
     return browser
 
 
@@ -40,7 +43,7 @@ def crawl_and_parse(url='https://www.fragrantica.com/search/'):
 
     browser = init_browser()
     browser.visit(url)
-    time.sleep(2) # to load the page properly
+    time.sleep(2)  # to load the page properly
 
     ### Agree to the privacy notice ###
     try:
@@ -50,7 +53,7 @@ def crawl_and_parse(url='https://www.fragrantica.com/search/'):
         print(e, 'An error is in privacy notice consent block')
     time.sleep(2)
 
-    ### Filtering by release year (for the simplicity of data storing)###
+    ###  Filtering by release year (for the simplicity of data storing)  ###
     # value: min - 1920, max - 2024
 
     try:
@@ -66,11 +69,13 @@ def crawl_and_parse(url='https://www.fragrantica.com/search/'):
 
     time.sleep(5)
 
-    ####  CLICK "SHOW MORE RESULTS"  ####(otherwise only 30 can be displayed)
-    search_is_expaneded = False
-    while True: #not search_is_expaneded:
+    ####  CLICK "SHOW MORE RESULTS"  ####
+    # (otherwise only 30 can be displayed)
+
+    while True:  # while search is not fully expaneded:
         try:
-            button = browser.find_by_xpath('//button[@class="button"and contains(text(),"Show more results")]').first  # xpath expression to locate elements. - XML path query language
+            button = browser.find_by_xpath(
+                '//button[@class="button"and contains(text(),"Show more results")]').first  # xpath expression to locate elements. - XML path query language
             if 'disabled' in button['outerHTML']:
                 print('\"Show more results button\" is disabled')
                 break
@@ -87,36 +92,39 @@ def crawl_and_parse(url='https://www.fragrantica.com/search/'):
     html_soup = BeautifulSoup(html_content, 'lxml')
 
     perfumes_number = len(html_soup.select('div.cell.card.fr-news-box a'))
+    print("Perfumes Number:", perfumes_number)
     for k in range(perfumes_number):
-        browser.find_by_css('span[class="link-span"]')[0].click()
+        try:
+            browser.find_by_css('span[class="link-span"]')[k].click()
+        except:
+
         time.sleep(5)
 
         html_content = browser.html
         html_soup = BeautifulSoup(html_content, 'lxml')
 
         ### I'm a human verification ###
-        # if html_soup.title.text == "Just a moment...":
+
+        html_content = browser.html
+        html_soup = BeautifulSoup(html_content, 'lxml')
+
         while html_soup.title.text == "Just a moment...":
             try:
                 browser.find_by_xpath('//iframe[contains(@src, "challenges.cloudflare.com")]').first.click()
             except Exception as e:
                 print(e, 'Could not complete the captcha ')
 
-            html_content = browser.html
-            html_soup = BeautifulSoup(html_content, 'lxml')
-            time.sleep(20)
 
         parse_result = parse_perfume_page(browser.html)
         time.sleep(5)
         browser.back()
-        time.sleep(2)
+        time.sleep(3)
+        print('NEXT PLEASE \n')
+
     # enable this code where you need to look into the html code manually
     # with open('crawl_test_page.html', 'w', encoding='utf-8') as file:
     #      file.write(html_soup.prettify())
     return
-
-
-
 
 
 def fetch_and_parse(url='https://www.fragrantica.com/search/', n_displayed=100):
@@ -228,7 +236,7 @@ def parse_perfume_page(html_content):
     votes = rating_section.find('span', itemprop='ratingCount').text if rating_section else None
     num_reviews_element = soup.select_one('meta[itemprop="reviewCount"]')
     num_reviews = num_reviews_element['content'] if num_reviews_element else None
-    print(title, rating, votes)
+    # print(title, rating, votes)
     # # Extracting main accords
     accords = {}
     accord_list = soup.find_all('div', {'class': 'accord-bar'})
@@ -236,41 +244,23 @@ def parse_perfume_page(html_content):
         name = accord.text.strip()
         percentage = accord.get('style', '').split(':')[-1].strip('%;')
         accords[name] = float(percentage)
+        # print(name, percentage)
 
     # Extracting season preferences
-    # seasons = {}
-    # for i in range(4):
-    #     season = soup.find('div', index=str(i))
-    #     print(season)
-    #     percentage = season.find('div', class_='voting-small-chart-size').find_all('div')[1].get('style', '').split(';')[-3].split(
-    #         ':')[-1].strip('%;')
-    #     seasons[season.text.strip()] = float(percentage)
-    #
-    # # Day/Night preferences
-    # day_night = {}
-    # for i in range(2):
-    #     day_or_night = soup.find('div', index=str(4 + i))
-    #     percentage = \
-    #     day_or_night.find('div', class_='voting-small-chart-size').find_all('div')[1].get('style', '').split(';')[
-    #         -3].split(':')[-1].strip('%;')
-    #     day_night[day_or_night.text.strip()] = float(percentage)
+    seasons = extract_season(soup)
+    #print(seasons)
+
+    # Day/Night preferences
+    day_night = extract_day_night(soup)
+    #print(day_night)
+
+    # Extracting Longevity, Sillage, Gender, Price to value ratio
+    results_long_sill_gend_pv = extract_long_sill_gend_pv(soup)
+    #print(results_long_sill_gend_pv)
 
     # Extracting notes
-    # yet to be implemented;
-    # Проблема: кожний набір нот має довільну кількість div контейнерів (на 3 вглибину) без id або
-    # інших розпізнавальних знаків
-    # Можливий варіант: три рази ми заглиблюємося через find (або find_all з конкретними значеннями порядку)
-    # Повторюівати цю процедуру допоки знайдене значення не None. Але межі пошуку все одно треба якось вказувати.
-    # Чи можна шукати додатково по значенням аргументів, або по наявності включних елементів?
-    notes = {}
-    # note_section = soup.find('div', id='pyramid').find_all(
-    #     'h4')  # це може слугувати роздільником, який задає межі для пошуку
-    # for note_block in note_section:
-    #     print(note_block)
-    #     print(note_block.text)  #
-
-    # Gender
-    # Price
+    top_notes, middle_notes, base_notes = parse_fragrance_notes(soup)
+    #print(top_notes, middle_notes, base_notes)
 
     return {
         'title': title,
@@ -286,6 +276,112 @@ def parse_perfume_page(html_content):
     #     'gender': gender,
     #     'price': price
     # }
+
+
+def extract_season(soup):
+    """
+    Parse fragrance features - season usage suitability
+    @param soup: soup object
+    @return: dict which contain the percentage value of season suitability with keys 'winter', 'spring', 'summer', 'fall'
+    """
+    seasons = {}
+    for i in range(4):
+        try:
+            season = soup.find('div', index=str(i))
+            percentage = \
+                season.find('div', class_='voting-small-chart-size').find_all('div')[1].get('style', '').split(';')[
+                    -3].split(
+                    ':')[-1].strip('%;')
+            seasons[season.text.strip().lower()] = float(percentage)
+        except Exception as e:     #
+            print(f"Error extracting season {i}: {e}")
+    return seasons
+
+
+def extract_day_night(soup):
+    """
+    Parse fragrance features - night/day usage suitability
+    @param soup: soup object
+    @return: dict wich contain the percentage value of suitability with keys 'day', 'night'
+    """
+    day_night = {}
+    for i in range(2):
+        try:
+            day_or_night = soup.find('div', index=str(4 + i))
+            percentage = \
+                day_or_night.find('div', class_='voting-small-chart-size').find_all('div')[1].get('style', '').split(
+                    ';')[
+                    -3].split(':')[-1].strip('%;')
+            day_night[day_or_night.text.strip().lower()] = float(percentage)
+        except Exception as e: # AttributeError, IndexError
+            print(f"Error extracting day/night {i}: {e}")
+    return day_night
+
+
+def extract_long_sill_gend_pv(soup):
+    """ Parse fragrance features like Longevity, Sillage, Gender, Price/Value from the BeautifulSoup object."""
+    # N.B. These features have similar structure, that's why the for-loop was used
+    # TODO: what if the values of several categories are the same?
+
+    categories = ['LONGEVITY', 'SILLAGE', 'GENDER', 'PRICE VALUE']
+    results = {category: None for category in categories}
+
+    for category in categories:
+        category_span = soup.find('span', text=category, attrs={'style': 'font-size: small;'})
+        if category_span:
+            first_div = category_span.find_parent('div')
+            if first_div:
+                third_div = first_div.find_next_sibling('div').find_next_sibling('div')
+                if third_div:
+                    largest_value = 0
+                    largest_category = None
+                    for grid_row in third_div.find_all('div', class_='grid-x grid-margin-x'):
+                        category_name_element = grid_row.find('span', class_='vote-button-name')
+                        value_element = grid_row.find('span', class_='vote-button-legend')
+
+                        if category_name_element and value_element:
+                            try:
+                                value = int(value_element.text)
+                            except ValueError:  # error handling
+                                continue
+                            category_name = category_name_element.text
+
+                            if value > largest_value:
+                                largest_category = category_name
+                                largest_value = value
+                    results[category] = largest_category
+    return results
+
+def extract_notes(note_div):
+    """Extract notes from a note div."""
+    notes_list = []
+    note_divs = note_div.find_all("div")
+    for i in range(2, len(note_divs), 3):
+        notes_list.append(note_divs[i].get_text())
+    return notes_list
+
+
+def parse_fragrance_notes(soup):
+    """Parse fragrance notes from the BeautifulSoup object."""
+    note_style = "display: flex; justify-content: center; text-align: center; flex-flow: wrap; align-items: flex-end; padding: 0.5rem;"
+    notes = soup.find_all("div", attrs={"style": note_style})
+
+    top_notes_list = []
+    middle_notes_list = []
+    base_notes_list = []
+
+    if len(notes) == 3:
+        top_notes_list = extract_notes(notes[0])
+        middle_notes_list = extract_notes(notes[1])
+        base_notes_list = extract_notes(notes[2])
+    elif len(notes) == 2:
+        top_notes_list = extract_notes(notes[0])
+        middle_notes_list = extract_notes(notes[1])
+    elif len(notes) == 1:
+        middle_notes_list = extract_notes(notes[0])
+
+    return top_notes_list, middle_notes_list, base_notes_list
+
 
 
 if __name__ == '__main__':
