@@ -5,7 +5,12 @@ import pickle
 import time
 import selenium  # programmatically control web browsers
 from webdriver_manager.chrome import ChromeDriverManager
+import undetected_chromedriver as uc
+# from webdriver_manager.firefox
 from selenium.webdriver.chrome.service import Service
+# from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver import Firefox
 from splinter import Browser
 import random
 import scipy.interpolate as si # implementation of mouse move v3
@@ -28,6 +33,21 @@ categories = ['LONGEVITY', 'SILLAGE', 'GENDER', 'PRICE VALUE']
 
 # Why do we need browser? - requests cannot handle modern webpages
 # that rely on JavaScript to load the content (dynamic and complex)
+def init_undetected_browser():
+    options = uc.ChromeOptions()
+
+    # Add any additional options here
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--headless")
+
+    driver = uc.Chrome(
+        options=options,
+        service=Service(ChromeDriverManager().install())
+    )
+
+    browser = Browser(driver=driver)
+    browser.driver.set_window_size(1200, 800)
+    return browser
 
 def init_browser():
     # Replace the path with your actual path to the chromedriver
@@ -37,8 +57,25 @@ def init_browser():
     # browser = Browser("chrome", **executable_path, headless=False)
     # service = Service(ChromeDriverManager().install())
     # browser = Browser("chrome", headless=False, incognito=True) #service=service,
-    browser = Browser('firefox', headless=False, incognito=True)
-    browser.driver.set_window_size(1200, 800)
+    browser = Browser('firefox', headless=False) # , incognito=True
+
+    #
+    # # Plan C
+    # # Create Chromeoptions instance
+    # options = selenium.webdriver.FirefoxOptions() #       ChromeOptions()
+    # # Adding argument to disable the AutomationControlled flag
+    # options.add_argument("--disable-blink-features=AutomationControlled")
+    # # Exclude the collection of enable-automation switches
+    # #options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    # # Turn-off userAutomationExtension
+    # #options.add_experimental_option("useAutomationExtension", False)
+    # options.o("excludeSwitches", ["enable-automation"])
+    # options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    # options.add_experimental_option('useAutomationExtension', False)
+    #
+    # # Setting the driver path and requesting a page
+    # browser = Browser('firefox', options=options, headless=False, incognito=True)
+
     return browser
 
 
@@ -89,7 +126,7 @@ def simulate_human_mouse_movement(driver, start_element, end_element, steps=10):
     random_pause(0.2, 0.5)
 
 
-def generate_smooth_path(browser, end_coordinates, viewport_width, viewport_height, num_points=50):
+def generate_smooth_path(browser, end_coordinates, viewport_width, viewport_height, num_points=30):
     """Create random intermediate control points within the window frame using B-spline interpolation"""
     # Obtaining scroll information
     print("\nStart of generating smooth mouse path function")
@@ -285,7 +322,8 @@ def random_slow_scroll(browser):
 def crawl_and_parse(year_from, year_to, url='https://www.fragrantica.com/search/'):
     # Search is performed using css selectors (find_by_css) or by Xpath (find_by_xpath)
 
-    browser = init_browser()
+    # browser = init_browser()
+    browser = init_undetected_browser()
     browser.visit(url)
     time.sleep(2)  # to load the page properly
 
@@ -718,7 +756,7 @@ def parse_fragrance_notes(soup):
 
 
 if __name__ == '__main__':
-    crawl_and_parse(1939, 1939)
+    crawl_and_parse(1940, 1940)
 
     # with open('Leather Parfume.html', 'r', encoding="utf8") as html_file:
     #     content = html_file.read()

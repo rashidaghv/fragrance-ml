@@ -1,0 +1,27 @@
+
+# Why do we need browser? - requests cannot handle modern webpages
+# that rely on JavaScript to load the content (dynamic and complex)
+
+
+# webdriver: for a setup process to control a browser in python. ChromeDriverManager handle downloading, updating, and setting up the ChromeDriver executable.
+# Splinter - web application testing tool built on top of Selenium. It provides an easy-to-use interface for browser automation and interaction, making it simpler and more Pythonic than using Selenium directly.
+
+
+# Shit:
+
+#
+# # Plan C
+# # Create Chromeoptions instance
+# options = selenium.webdriver.FirefoxOptions() #       ChromeOptions()
+# # Adding argument to disable the AutomationControlled flag
+# options.add_argument("--disable-blink-features=AutomationControlled")
+# # Exclude the collection of enable-automation switches
+# #options.add_experimental_option("excludeSwitches", ["enable-automation"])
+# # Turn-off userAutomationExtension
+# #options.add_experimental_option("useAutomationExtension", False)
+# options.o("excludeSwitches", ["enable-automation"])
+# options.add_experimental_option('excludeSwitches', ['enable-logging'])
+# options.add_experimental_option('useAutomationExtension', False)
+#
+# # Setting the driver path and requesting a page
+# browser = Browser('firefox', options=options, headless=False, incognito=True)
